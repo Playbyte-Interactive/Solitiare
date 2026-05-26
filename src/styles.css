@@ -263,6 +263,9 @@ h2 {
   background: rgba(8, 13, 15, 0.34);
   cursor: pointer;
   overflow: hidden;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .foundation:disabled,
@@ -1133,6 +1136,9 @@ h2 {
   min-height: 0;
   aspect-ratio: 0.72;
   border-radius: 6px;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .foundation.is-empty {
