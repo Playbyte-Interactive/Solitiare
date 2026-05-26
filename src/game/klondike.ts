@@ -26,6 +26,8 @@ export type BoardSnapshot = {
   startedAt: number;
   finishedAt: number | null;
   message: string;
+  stockPassKey: string;
+  stockPassMadeMove: boolean;
 };
 
 export type GameState = BoardSnapshot & {
@@ -73,6 +75,8 @@ export const starterGame = (): GameState => ({
   startedAt: Date.now(),
   finishedAt: null,
   message: "Classic Klondike: build foundations from Ace to King.",
+  stockPassKey: "",
+  stockPassMadeMove: false,
   history: [],
 });
 
@@ -89,7 +93,7 @@ export const createGame = (): GameState => {
     }
   }
 
-  return {
+  const game: GameState = {
     tableau,
     stock: deck.map((card) => ({ ...card, faceUp: false })),
     waste: [],
@@ -99,8 +103,13 @@ export const createGame = (): GameState => {
     startedAt: Date.now(),
     finishedAt: null,
     message: "Move cards down in alternating colors. Build each suit from Ace to King.",
+    stockPassKey: "",
+    stockPassMadeMove: false,
     history: [],
   };
+
+  game.stockPassKey = stockCycleKey(game);
+  return game;
 };
 
 export const scoreFor = (game: BoardSnapshot) => {
@@ -138,7 +147,12 @@ export const dealStock = (game: GameState): ActionResult => {
     const card = next.stock.pop()!;
     next.waste.push({ ...card, faceUp: true });
     next.moves += 1;
-    next.message = findCardMoveHints(next).length ? "Card drawn. A move is open." : "Card drawn. Keep searching or use Play.";
+    const openMoves = findCardMoveHints(next);
+    next.message = openMoves.length
+      ? "Card drawn. A real move is open now."
+      : next.stock.length
+        ? "Card drawn. No useful move yet; keep drawing."
+        : "Stock pass finished. Move a card or recycle once.";
     refreshStatus(next);
     return { game: withHistory(next, game), sound: "deal" };
   }
@@ -147,7 +161,18 @@ export const dealStock = (game: GameState): ActionResult => {
     next.stock = next.waste.reverse().map((card) => ({ ...card, faceUp: false }));
     next.waste = [];
     next.moves += 1;
-    next.message = "Waste recycled to stock.";
+    const cycleKey = stockCycleKey(next);
+    if (!game.stockPassMadeMove && cycleKey === game.stockPassKey) {
+      next.status = "stuck";
+      next.finishedAt = Date.now();
+      next.message = "No progress after a full stock cycle. Deal over.";
+      next.stockPassKey = cycleKey;
+      next.stockPassMadeMove = false;
+      return { game: withHistory(next, game), sound: "error" };
+    }
+    next.stockPassKey = cycleKey;
+    next.stockPassMadeMove = false;
+    next.message = "Waste recycled. New stock pass started.";
     refreshStatus(next);
     return { game: withHistory(next, game), sound: "flip" };
   }
@@ -174,6 +199,7 @@ export const moveCards = (game: GameState, from: MovePointer, to: MovePointer): 
     removeMovingCards(next, from);
     next.foundations[to.suit].push({ ...moving[0], faceUp: true });
     next.moves += 1;
+    next.stockPassMadeMove = true;
     const flipped = revealSourceTop(next, from);
     refreshStatus(next);
     next.message = next.status === "won" ? "Board cleared." : `${rankLabel(moving[0].rank)} to ${suitName[to.suit]}.`;
@@ -195,6 +221,7 @@ export const moveCards = (game: GameState, from: MovePointer, to: MovePointer): 
   removeMovingCards(next, from);
   next.tableau[to.column].push(...moving.map((card) => ({ ...card, faceUp: true })));
   next.moves += 1;
+  next.stockPassMadeMove = true;
   const flipped = revealSourceTop(next, from);
   refreshStatus(next);
   next.message = flipped ? "New card revealed." : "Cards moved.";
@@ -252,6 +279,7 @@ export const jokerMove = (game: GameState): ActionResult => {
 
     next.foundations[card.suit].push({ ...card, faceUp: true });
     next.moves += 1;
+    next.stockPassMadeMove = true;
     const source = nextFoundationCard.source;
     if (source.zone === "tableau" && source.column !== undefined) {
       revealSourceTop(next, { zone: "tableau", column: source.column, index: Math.max(0, source.index ?? 0) });
@@ -277,6 +305,7 @@ export const jokerMove = (game: GameState): ActionResult => {
     next.finishedAt = null;
     next.tableau[reveal.column][reveal.index].faceUp = true;
     next.moves += 1;
+    next.stockPassMadeMove = true;
     next.message = "Joker revealed a buried card.";
     refreshStatus(next);
     return { game: withHistory(next, game), sound: "flip" };
@@ -323,12 +352,27 @@ export const findHints = (game: BoardSnapshot): Array<{ from: MovePointer; to: M
   });
 
   if (!hints.length && game.stock.length) {
-    hints.push({ from: { zone: "waste" }, to: { zone: "waste" }, label: "Draw from stock." });
-  } else if (!hints.length && game.waste.length) {
-    hints.push({ from: { zone: "waste" }, to: { zone: "waste" }, label: "Use Joker to break this dead pass." });
+    hints.push({
+      from: { zone: "waste" },
+      to: { zone: "waste" },
+      label: "No card move is available. Tap the stock pile to reveal the next card.",
+    });
+  } else if (!hints.length && game.waste.length && !hasStockLoop(game)) {
+    hints.push({
+      from: { zone: "waste" },
+      to: { zone: "waste" },
+      label: "Recycle the waste into stock. The board changed, so a new pass may open a move.",
+    });
   }
 
   return hints.sort((first, second) => hintWeight(game, second) - hintWeight(game, first));
+};
+
+export const hasStockLoop = (game: BoardSnapshot) => {
+  if (game.status !== "playing" || game.stock.length || !game.waste.length || game.stockPassMadeMove) {
+    return false;
+  }
+  return stockCycleKeyAfterRecycle(game) === game.stockPassKey;
 };
 
 function findCardMoveHints(game: BoardSnapshot): Array<{ from: MovePointer; to: MovePointer; label: string }> {
@@ -359,6 +403,9 @@ function findCardMoveHints(game: BoardSnapshot): Array<{ from: MovePointer; to: 
 }
 
 function hintWeight(game: BoardSnapshot, hint: { from: MovePointer; to: MovePointer }) {
+  if (hint.from.zone === "waste" && hint.to.zone === "waste") {
+    return 5;
+  }
   if (hint.to.zone === "foundation") {
     return 100;
   }
@@ -389,7 +436,7 @@ function collectCardHints(
     hints.push({
       from,
       to: { zone: "foundation", suit: moving[0].suit },
-      label: `Move ${rankLabel(moving[0].rank)} of ${suitName[moving[0].suit]} to foundation.`,
+      label: `${describeCard(moving[0])}: move from ${describeSource(from)} to the ${suitName[moving[0].suit]} foundation.`,
     });
   }
 
@@ -398,13 +445,38 @@ function collectCardHints(
       return;
     }
     if (canMoveToTableau(column, moving[0])) {
+      const top = column[column.length - 1];
+      const target = top ? `onto ${describeCard(top)} in column ${columnIndex + 1}` : `to empty column ${columnIndex + 1}`;
+      const reason =
+        from.zone === "tableau" && willRevealCard(game, from)
+          ? " This reveals the hidden card underneath."
+          : from.zone === "waste"
+            ? " This clears the waste card so stock progress can continue."
+            : " This creates a legal descending stack.";
       hints.push({
         from,
         to: { zone: "tableau", column: columnIndex },
-        label: `Move ${rankLabel(moving[0].rank)} to column ${columnIndex + 1}.`,
+        label: `${describeCard(moving[0])}: move from ${describeSource(from)} ${target}.${reason}`,
       });
     }
   });
+}
+
+function describeCard(card: Card) {
+  return `${rankLabel(card.rank)} of ${suitName[card.suit]}`;
+}
+
+function describeSource(pointer: MovePointer) {
+  if (pointer.zone === "waste") {
+    return "the waste pile";
+  }
+  if (pointer.zone === "foundation" && pointer.suit) {
+    return `the ${suitName[pointer.suit]} foundation`;
+  }
+  if (pointer.zone === "tableau" && pointer.column !== undefined) {
+    return `column ${pointer.column + 1}`;
+  }
+  return "the selected pile";
 }
 
 function canMoveToFoundation(foundation: Card[], card: Card) {
@@ -495,6 +567,22 @@ function refreshStatus(snapshot: BoardSnapshot) {
     snapshot.finishedAt = Date.now();
     snapshot.message = "No valid moves remain.";
   }
+}
+
+function stockCycleKeyAfterRecycle(game: BoardSnapshot) {
+  const recycled = cloneSnapshot(game);
+  recycled.stock = recycled.waste.slice().reverse().map((card) => ({ ...card, faceUp: false }));
+  recycled.waste = [];
+  return stockCycleKey(recycled);
+}
+
+function stockCycleKey(game: BoardSnapshot) {
+  const tableauKey = game.tableau
+    .map((column) => column.map((card) => `${card.id}:${card.faceUp ? "1" : "0"}`).join(","))
+    .join("|");
+  const foundationKey = suits.map((suit) => game.foundations[suit].map((card) => card.id).join(",")).join("|");
+  const stockKey = game.stock.map((card) => card.id).join(",");
+  return `${tableauKey}#${foundationKey}#${stockKey}`;
 }
 
 function findNextFoundationCandidate(game: BoardSnapshot): { card: Card; source: MovePointer } | null {
@@ -611,6 +699,8 @@ function snapshotOf(game: GameState): BoardSnapshot {
     startedAt: game.startedAt,
     finishedAt: game.finishedAt,
     message: game.message,
+    stockPassKey: game.stockPassKey,
+    stockPassMadeMove: game.stockPassMadeMove,
   };
 }
 

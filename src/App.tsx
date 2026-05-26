@@ -3,7 +3,6 @@ import {
   BadgeHelp,
   BarChart3,
   CalendarDays,
-  Check,
   Lightbulb,
   Pause,
   Play,
@@ -22,14 +21,13 @@ import {
   type MovePointer,
   type Suit,
   autoMoveToFoundation,
-  autoProgress,
   cardColor,
   createGame,
   dealStock,
   elapsedMsFor,
   findHints,
   formatTime,
-  jokerMove,
+  hasStockLoop,
   moveCards,
   rankLabel,
   scoreFor,
@@ -191,7 +189,16 @@ export default function App() {
     }
     const [nextHint] = findHints(game);
     if (!nextHint) {
-      setGame({ ...game, message: "No visible move. Use Joker for a rescue move." });
+      if (hasStockLoop(game)) {
+        setGame({
+          ...game,
+          status: "stuck",
+          finishedAt: Date.now(),
+          message: "No productive move remains after a repeated stock cycle. Deal over.",
+        });
+      } else {
+        setGame({ ...game, message: "No useful move is available from the visible cards." });
+      }
       await play("error");
       return;
     }
@@ -199,20 +206,6 @@ export default function App() {
     setSelected(nextHint.from.zone === "waste" && !game.waste.length ? null : nextHint.from);
     setGame({ ...game, message: nextHint.label });
     await play("tap");
-  };
-
-  const handleAutoProgress = async () => {
-    if (isPaused) {
-      return;
-    }
-    await applyResult(autoProgress(game));
-  };
-
-  const handleJoker = async () => {
-    if ((game.status !== "playing" && game.status !== "stuck") || isPaused) {
-      return;
-    }
-    await applyResult(jokerMove(game));
   };
 
   const selectOrMove = async (pointer: MovePointer) => {
@@ -402,14 +395,14 @@ export default function App() {
           </div>
 
           <button
-            className="round-hud-button check-hud"
+            className="round-hud-button pause-hud"
             type="button"
-            onClick={handleAutoProgress}
-            aria-label="Play best move"
-            title="Play best move"
-            disabled={game.status !== "playing" || isPaused}
+            onClick={isPaused ? resumeGame : pauseGame}
+            aria-label={isPaused ? "Resume game" : "Pause game"}
+            title={isPaused ? "Resume game" : "Pause game"}
+            disabled={game.status !== "playing"}
           >
-            <Check size={34} strokeWidth={4} />
+            {isPaused ? <Play size={32} fill="currentColor" /> : <Pause size={32} fill="currentColor" />}
           </button>
         </header>
 
@@ -507,7 +500,7 @@ export default function App() {
                       } ${isDraggingSource ? "is-drag-source" : ""}`}
                       key={card.id}
                       style={{
-                        top: `calc(${cardIndex} * var(${card.faceUp ? "--face-up-gap" : "--face-down-gap"}))`,
+                        top: stackTopFor(column, cardIndex),
                         zIndex: cardIndex + 1,
                       }}
                       data-drop-zone="tableau"
@@ -547,15 +540,6 @@ export default function App() {
 
         {dragState?.active && <DragPreview drag={dragState} />}
 
-        <nav className="action-dock" aria-label="Quick actions">
-          <DockButton icon={<Settings size={19} />} label="Rules" onClick={toggleRules} />
-          <DockButton icon={<CalendarDays size={19} />} label="Deal" onClick={startGame} />
-          <DockButton icon={<Play size={22} fill="currentColor" />} label="Play" onClick={handleAutoProgress} disabled={game.status !== "playing" || isPaused} primary />
-          <DockButton icon={<Lightbulb size={19} />} label="Hint" onClick={showNextHint} disabled={game.status !== "playing" || isPaused} />
-          <DockButton icon={muted ? <VolumeX size={19} /> : <Volume2 size={19} />} label="Sound" onClick={() => setMuted((value) => !value)} />
-          <DockButton icon={<Undo2 size={19} />} label="Undo" onClick={handleUndo} disabled={!game.history.length || isPaused} />
-        </nav>
-
         <footer className="bottom-row">
           <p className="message" role="status">
             {game.message}
@@ -567,11 +551,26 @@ export default function App() {
           )}
         </footer>
 
+        <nav className="action-dock" aria-label="Quick actions">
+          <DockButton icon={<Settings size={19} />} label="Rules" onClick={toggleRules} />
+          <DockButton icon={<CalendarDays size={19} />} label="Deal" onClick={startGame} />
+          <DockButton
+            icon={isPaused ? <Play size={22} fill="currentColor" /> : <Pause size={21} fill="currentColor" />}
+            label={isPaused ? "Resume" : "Pause"}
+            onClick={isPaused ? resumeGame : pauseGame}
+            disabled={game.status !== "playing"}
+            primary
+          />
+          <DockButton icon={<Lightbulb size={19} />} label="Hint" onClick={showNextHint} disabled={game.status !== "playing" || isPaused} />
+          <DockButton icon={muted ? <VolumeX size={19} /> : <Volume2 size={19} />} label="Sound" onClick={() => setMuted((value) => !value)} />
+          <DockButton icon={<Undo2 size={19} />} label="Undo" onClick={handleUndo} disabled={!game.history.length || isPaused} />
+        </nav>
+
         {game.status === "menu" && <StartOverlay startGame={startGame} />}
         {showRules && game.status !== "menu" && <RulesOverlay close={toggleRules} />}
         {isPaused && <PauseOverlay game={game} resumeGame={resumeGame} startGame={startGame} />}
         {game.status === "won" && <EndOverlay game={game} startGame={startGame} />}
-        {game.status === "stuck" && !showRules && <StuckOverlay game={game} startGame={startGame} undoGame={handleUndo} joker={handleJoker} />}
+        {game.status === "stuck" && !showRules && <StuckOverlay game={game} startGame={startGame} />}
       </section>
     </main>
   );
@@ -654,7 +653,7 @@ function StartOverlay({ startGame }: { startGame: () => Promise<void> }) {
         <p className="eyebrow">Classic solitaire</p>
         <h2>Clear the table. Keep going.</h2>
         <p className="panel-copy">
-          Draw from stock, stack alternating colors, send each suit home, and use Hint, Play, or Joker whenever the table needs momentum.
+          Draw from stock, stack alternating colors, send each suit home, and use Hint whenever the next useful move is not obvious.
         </p>
         <div className="start-actions">
           <button onClick={startGame}>Start Deal</button>
@@ -674,7 +673,7 @@ function RulesOverlay({ close }: { close: () => Promise<void> }) {
         <p className="eyebrow">How to play</p>
         <h2>Klondike rules.</h2>
         <p className="panel-copy">
-          Tap stock to draw. Move cards down on the tableau in alternating colors. Empty columns accept Kings. Build foundations from Ace to King by suit. Double-tap a top card to send it home. Play performs the best available move, and Joker rescues stuck boards.
+          Tap stock to draw. Move cards down on the tableau in alternating colors. Empty columns accept Kings. Build foundations from Ace to King by suit. Double-tap a top card to send it home. Hint highlights a source and destination, and a repeated stock loop ends the deal.
         </p>
         <div className="start-actions">
           <button onClick={close}>Got it</button>
@@ -714,6 +713,9 @@ function PauseOverlay({
 }
 
 function EndOverlay({ game, startGame }: { game: GameState; startGame: () => Promise<void> }) {
+  const finalScore = scoreFor(game);
+  const highScore = Math.max(finalScore, readBest()?.score ?? 0);
+
   return (
     <div className="overlay">
       <div className="start-panel end-panel">
@@ -723,7 +725,7 @@ function EndOverlay({ game, startGame }: { game: GameState; startGame: () => Pro
         <p className="eyebrow">Victory</p>
         <h2>The foundations are full.</h2>
         <p className="panel-copy">
-          Score {scoreFor(game)} - {game.moves} moves - {formatTime(elapsedMsFor(game))}
+          Score {finalScore} - High {highScore} - {game.moves} moves - {formatTime(elapsedMsFor(game))}
         </p>
         <div className="start-actions">
           <button onClick={startGame}>Next Deal</button>
@@ -736,29 +738,26 @@ function EndOverlay({ game, startGame }: { game: GameState; startGame: () => Pro
 function StuckOverlay({
   game,
   startGame,
-  undoGame,
-  joker,
 }: {
   game: GameState;
   startGame: () => Promise<void>;
-  undoGame: () => Promise<void>;
-  joker: () => Promise<void>;
 }) {
+  const finalScore = scoreFor(game);
+  const highScore = Math.max(finalScore, readBest()?.score ?? 0);
+
   return (
     <div className="overlay">
       <div className="start-panel end-panel">
         <div className="panel-icon">
           <BadgeHelp size={34} />
         </div>
-        <p className="eyebrow">No valid moves</p>
-        <h2>The table is locked.</h2>
+        <p className="eyebrow">Game over</p>
+        <h2>No progress remains.</h2>
         <p className="panel-copy">
-          Score {scoreFor(game)} - {game.moves} moves - {formatTime(elapsedMsFor(game))}. Use Joker to rescue the board, undo the last move, or start a fresh deal.
+          Score {finalScore} - High {highScore} - {game.moves} moves - {formatTime(elapsedMsFor(game))}. This deal repeated without a real card move.
         </p>
         <div className="start-actions">
-          <button onClick={joker}>Joker Rescue</button>
-          <button onClick={undoGame} disabled={!game.history.length}>Undo</button>
-          <button onClick={startGame}>New deal</button>
+          <button onClick={startGame}>Play Again</button>
         </div>
       </div>
     </div>
@@ -832,6 +831,13 @@ function cardsForPointer(game: GameState, pointer: MovePointer): Card[] {
   }
 
   return [];
+}
+
+function stackTopFor(column: Card[], cardIndex: number) {
+  const before = column.slice(0, cardIndex);
+  const faceUpBefore = before.filter((card) => card.faceUp).length;
+  const faceDownBefore = before.length - faceUpBefore;
+  return `calc(${faceDownBefore} * var(--face-down-gap) + ${faceUpBefore} * var(--face-up-gap))`;
 }
 
 function samePointer(first: MovePointer, second: MovePointer) {
