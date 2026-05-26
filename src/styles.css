@@ -1339,6 +1339,40 @@ h2 {
     gap: 9px;
   }
 
+  .pile-row {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: clamp(3px, 1vw, 6px);
+    align-items: start;
+  }
+
+  .pile-row .foundations {
+    grid-column: 3 / span 4;
+    grid-row: 1;
+  }
+
+  .waste-slot {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .waste-slot > span {
+    max-width: 100%;
+    overflow: hidden;
+    font-size: clamp(0.72rem, 3.3vw, 1rem);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .stock {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .foundations {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: clamp(3px, 1vw, 6px);
+  }
+
   .foundation {
     height: auto;
   }
