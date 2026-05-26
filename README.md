@@ -1,1 +1,1 @@
-Vercel link -
+Vercel link - https://solitiare.vercel.app/
