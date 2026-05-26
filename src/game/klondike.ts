@@ -191,7 +191,7 @@ export const moveCards = (game: GameState, from: MovePointer, to: MovePointer): 
   }
 
   if (to.zone === "foundation") {
-    if (moving.length !== 1 || !to.suit || !canMoveToFoundation(game.foundations[to.suit], moving[0])) {
+    if (moving.length !== 1 || !to.suit || moving[0].suit !== to.suit || !canMoveToFoundation(game.foundations[to.suit], moving[0])) {
       return fail(game, "Foundations build by suit from Ace to King.");
     }
 

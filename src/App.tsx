@@ -34,7 +34,6 @@ import {
   starterGame,
   stockLabelFor,
   suitName,
-  suitSymbol,
   suits,
   undo,
 } from "./game/klondike";
@@ -420,7 +419,7 @@ export default function App() {
                 const top = game.foundations[suit][game.foundations[suit].length - 1];
                 return (
                   <button
-                    className={`foundation ${top ? "has-card" : "is-empty"} ${cardColor(suit)} ${
+                    className={`foundation ${top ? "has-card" : "is-empty"} ${cardColor(top?.suit ?? suit)} ${
                       selected?.zone === "foundation" && selected.suit === suit ? "selected-pile" : ""
                     }`}
                     key={suit}
@@ -612,18 +611,50 @@ function CardFace({ card, compact = false }: { card: Card; compact?: boolean }) 
     <>
       <span className="card-corner">
         <strong>{rankLabel(card.rank)}</strong>
-        <span>{suitSymbol[card.suit]}</span>
+        <SuitMark suit={card.suit} />
       </span>
       <span className={compact ? "card-center compact" : "card-center"} aria-hidden="true">
-        {suitSymbol[card.suit]}
+        <SuitMark suit={card.suit} />
       </span>
       {!compact && (
         <span className="card-corner bottom">
           <strong>{rankLabel(card.rank)}</strong>
-          <span>{suitSymbol[card.suit]}</span>
+          <SuitMark suit={card.suit} />
         </span>
       )}
     </>
+  );
+}
+
+function SuitMark({ suit }: { suit: Suit }) {
+  if (suit === "clubs") {
+    return (
+      <svg className="suit-mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+        <path d="M27.3 39.1c-2.6 3.8-7 5.8-11.4 4.7-5.8-1.4-9.5-7-8.1-12.7 1.3-5.4 6.4-9.1 11.8-8.5C19 15.6 24.5 10 32 10s13 5.6 12.4 12.6c5.4-.6 10.5 3.1 11.8 8.5 1.4 5.7-2.3 11.3-8.1 12.7-4.4 1.1-8.8-.9-11.4-4.7 1.1 7.1 3.7 12.5 8.4 16.9H18.9c4.7-4.4 7.3-9.8 8.4-16.9Z" />
+      </svg>
+    );
+  }
+
+  if (suit === "spades") {
+    return (
+      <svg className="suit-mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+        <path d="M32 6s4.4 3.4 9.6 8.2C51.4 23.3 57 31 57 39.8 57 46.5 51.9 52 45.1 52c-3.3 0-6.5-1.3-8.8-3.5 1.1 4.1 3.1 7.2 6.4 9.5H21.3c3.3-2.3 5.3-5.4 6.4-9.5-2.3 2.2-5.5 3.5-8.8 3.5C12.1 52 7 46.5 7 39.8c0-8.8 5.6-16.5 15.4-25.6C27.6 9.4 32 6 32 6Z" />
+      </svg>
+    );
+  }
+
+  if (suit === "diamonds") {
+    return (
+      <svg className="suit-mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+        <path d="M32 4 56 32 32 60 8 32 32 4Z" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg className="suit-mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+      <path d="M32 56s-4.4-3.4-9.6-8.2C12.6 38.7 7 31 7 22.2 7 15.5 12.1 10 18.9 10c4.3 0 8.3 2.1 10.7 5.6C32 12.1 36 10 40.3 10 46.9 10 52 15.5 52 22.2c0 8.8-5.6 16.5-15.4 25.6C36.4 52.6 32 56 32 56Z" />
+    </svg>
   );
 }
 
@@ -631,7 +662,7 @@ function FoundationEmpty({ suit }: { suit: Suit }) {
   return (
     <span className="foundation-empty">
       <strong>A</strong>
-      <span>{suitSymbol[suit]}</span>
+      <SuitMark suit={suit} />
       <small>{suitName[suit]}</small>
     </span>
   );
@@ -642,10 +673,19 @@ function StartOverlay({ startGame }: { startGame: () => Promise<void> }) {
     <div className="overlay">
       <div className="start-panel">
         <div className="preview-table" aria-hidden="true">
-          <span className="preview-card red">A<br />{"\u2665"}</span>
-          <span className="preview-card black">K<br />{"\u2660"}</span>
+          <span className="preview-card red">
+            <strong>A</strong>
+            <SuitMark suit="hearts" />
+          </span>
+          <span className="preview-card black">
+            <strong>K</strong>
+            <SuitMark suit="spades" />
+          </span>
           <span className="preview-card back" />
-          <span className="preview-card red">Q<br />{"\u2666"}</span>
+          <span className="preview-card red">
+            <strong>Q</strong>
+            <SuitMark suit="diamonds" />
+          </span>
         </div>
         <div className="panel-icon">
           <Play size={34} fill="currentColor" />

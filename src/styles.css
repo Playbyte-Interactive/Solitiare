@@ -1428,3 +1428,73 @@ h2 {
     min-height: 54px;
   }
 }
+
+/* Generated card skin and deterministic suit marks. */
+.card,
+.foundation.has-card,
+.waste-slot.has-card {
+  background: transparent url("./assets/generated/solitaire-card-face.png") center / 100% 100% no-repeat;
+}
+
+.card.face-down,
+.stock,
+.stock-stack i,
+.preview-card.back {
+  background: transparent url("./assets/generated/solitaire-card-back.png") center / 100% 100% no-repeat;
+}
+
+.card.face-down .card-back {
+  display: none;
+}
+
+.card.red,
+.foundation.has-card.red,
+.waste-slot.has-card.red,
+.preview-card.red {
+  color: #d52725;
+}
+
+.card.black,
+.foundation.has-card.black,
+.waste-slot.has-card.black,
+.preview-card.black {
+  color: #07172a;
+}
+
+.suit-mark {
+  width: 1em;
+  height: 1em;
+  display: block;
+  fill: currentColor;
+  stroke: rgba(255, 255, 255, 0.18);
+  stroke-width: 0.75;
+  vector-effect: non-scaling-stroke;
+}
+
+.card-corner .suit-mark {
+  width: 0.82em;
+  height: 0.82em;
+  margin-top: 1px;
+}
+
+.card-center .suit-mark {
+  width: 1em;
+  height: 1em;
+  filter: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.26));
+}
+
+.foundation-empty .suit-mark {
+  display: none;
+}
+
+.preview-card {
+  grid-template-rows: auto auto;
+  align-content: center;
+  gap: 3px;
+  background: transparent url("./assets/generated/solitaire-card-face.png") center / 100% 100% no-repeat;
+}
+
+.preview-card .suit-mark {
+  width: 1.35em;
+  height: 1.35em;
+}
