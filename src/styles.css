@@ -1498,3 +1498,73 @@ h2 {
   width: 1.35em;
   height: 1.35em;
 }
+
+.foundation.foundation-any {
+  color: rgba(255, 248, 232, 0.9);
+}
+
+.foundation-empty.is-open {
+  gap: clamp(1px, 0.45vw, 3px);
+}
+
+.foundation-empty.is-open strong {
+  font-size: clamp(1.78rem, 7.4vw, 3.65rem);
+}
+
+.foundation-empty.is-open small,
+.foundation-empty.is-assigned small {
+  display: block;
+  font-size: clamp(0.42rem, 1.55vw, 0.66rem);
+  line-height: 1;
+}
+
+.foundation-any-suits {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  width: min(74%, 40px);
+  place-items: center;
+}
+
+.foundation-any-suits i {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  font-style: normal;
+}
+
+.foundation-empty.is-assigned > .suit-mark,
+.foundation-empty .foundation-any-suits .suit-mark {
+  display: block;
+  width: 0.72em;
+  height: 0.72em;
+}
+
+.foundation-any-suits .red {
+  color: #e03931;
+}
+
+.foundation-any-suits .black {
+  color: #082033;
+}
+
+@media (max-width: 760px) {
+  .foundation-empty.is-open {
+    gap: 1px;
+  }
+
+  .foundation-empty.is-open strong {
+    font-size: clamp(1.55rem, 8.2vw, 3.1rem);
+  }
+
+  .foundation-empty.is-open small,
+  .foundation-empty.is-assigned small {
+    display: block;
+    font-size: clamp(0.38rem, 1.72vw, 0.54rem);
+  }
+
+  .foundation-any-suits {
+    display: grid;
+    width: min(78%, 34px);
+  }
+}

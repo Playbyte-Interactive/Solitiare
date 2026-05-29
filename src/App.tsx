@@ -415,26 +415,29 @@ export default function App() {
         <section className="board-wrap">
           <div className="pile-row" aria-label="Stock, waste, and foundations">
             <div className="foundations" aria-label="Foundations">
-              {suits.map((suit) => {
-                const top = game.foundations[suit][game.foundations[suit].length - 1];
+              {game.foundationSlots.map((slotSuit, slotIndex) => {
+                const top = slotSuit ? game.foundations[slotSuit][game.foundations[slotSuit].length - 1] : undefined;
+                const pointer: MovePointer = { zone: "foundation", slot: slotIndex, suit: slotSuit ?? undefined };
+                const colorSuit = top?.suit ?? slotSuit;
                 return (
                   <button
-                    className={`foundation ${top ? "has-card" : "is-empty"} ${cardColor(top?.suit ?? suit)} ${
-                      selected?.zone === "foundation" && selected.suit === suit ? "selected-pile" : ""
+                    className={`foundation ${top ? "has-card" : "is-empty"} ${colorSuit ? cardColor(colorSuit) : "foundation-any"} ${
+                      selected?.zone === "foundation" && (selected.slot === slotIndex || (slotSuit && selected.suit === slotSuit)) ? "selected-pile" : ""
                     }`}
-                    key={suit}
+                    key={slotIndex}
                     type="button"
                     data-drop-zone="foundation"
-                    data-suit={suit}
-                    onPointerDown={(event) => beginCardDrag(event, { zone: "foundation", suit })}
+                    data-foundation-slot={slotIndex}
+                    data-suit={slotSuit ?? ""}
+                    onPointerDown={(event) => beginCardDrag(event, pointer)}
                     onPointerMove={updateCardDrag}
                     onPointerUp={finishCardDrag}
                     onPointerCancel={cancelCardDrag}
-                    onClick={() => void selectOrMove({ zone: "foundation", suit })}
+                    onClick={() => void selectOrMove(pointer)}
                     disabled={game.status !== "playing" || isPaused}
-                    aria-label={`${suitName[suit]} foundation`}
+                    aria-label={slotSuit ? `${suitName[slotSuit]} foundation` : "Open Ace foundation"}
                   >
-                    {top ? <CardFace card={top} compact /> : <FoundationEmpty suit={suit} />}
+                    {top ? <CardFace card={top} compact /> : <FoundationEmpty suit={slotSuit} />}
                   </button>
                 );
               })}
@@ -658,12 +661,22 @@ function SuitMark({ suit }: { suit: Suit }) {
   );
 }
 
-function FoundationEmpty({ suit }: { suit: Suit }) {
+function FoundationEmpty({ suit }: { suit?: Suit | null }) {
   return (
-    <span className="foundation-empty">
+    <span className={`foundation-empty ${suit ? "is-assigned" : "is-open"}`}>
       <strong>A</strong>
-      <SuitMark suit={suit} />
-      <small>{suitName[suit]}</small>
+      {suit ? (
+        <SuitMark suit={suit} />
+      ) : (
+        <span className="foundation-any-suits" aria-hidden="true">
+          {suits.map((anySuit) => (
+            <i className={cardColor(anySuit)} key={anySuit}>
+              <SuitMark suit={anySuit} />
+            </i>
+          ))}
+        </span>
+      )}
+      <small>{suit ? suitName[suit] : "Any Ace"}</small>
     </span>
   );
 }
@@ -713,7 +726,7 @@ function RulesOverlay({ close }: { close: () => Promise<void> }) {
         <p className="eyebrow">How to play</p>
         <h2>Klondike rules.</h2>
         <p className="panel-copy">
-          Tap stock to draw. Move cards down on the tableau in alternating colors. Empty columns accept Kings. Build foundations from Ace to King by suit. Double-tap a top card to send it home. Hint highlights a source and destination, and a repeated stock loop ends the deal.
+          Tap stock to draw. Move cards down on the tableau in alternating colors. Empty columns accept Kings. Drop any Ace into any open foundation box; that box then builds the same suit from Ace to King. Double-tap a top card to send it home. Hint highlights a source and destination, and a repeated stock loop ends the deal.
         </p>
         <div className="start-actions">
           <button onClick={close}>Got it</button>
@@ -848,8 +861,13 @@ function dropTargetFromPoint(x: number, y: number): MovePointer | null {
   }
 
   if (zone === "foundation") {
-    const suit = target.dataset.suit as Suit | undefined;
-    return suit && suits.includes(suit) ? { zone: "foundation", suit } : null;
+    const suitValue = target.dataset.suit as Suit | undefined;
+    const suit = suitValue && suits.includes(suitValue) ? suitValue : undefined;
+    const slot = target.dataset.foundationSlot !== undefined ? Number(target.dataset.foundationSlot) : undefined;
+    if (slot !== undefined && Number.isFinite(slot)) {
+      return { zone: "foundation", slot, suit };
+    }
+    return suit ? { zone: "foundation", suit } : null;
   }
 
   return null;
@@ -861,8 +879,9 @@ function cardsForPointer(game: GameState, pointer: MovePointer): Card[] {
     return card ? [card] : [];
   }
 
-  if (pointer.zone === "foundation" && pointer.suit) {
-    const card = game.foundations[pointer.suit][game.foundations[pointer.suit].length - 1];
+  if (pointer.zone === "foundation") {
+    const suit = pointer.suit ?? (pointer.slot !== undefined ? game.foundationSlots[pointer.slot] : null);
+    const card = suit ? game.foundations[suit][game.foundations[suit].length - 1] : null;
     return card ? [card] : [];
   }
 
@@ -881,7 +900,7 @@ function stackTopFor(column: Card[], cardIndex: number) {
 }
 
 function samePointer(first: MovePointer, second: MovePointer) {
-  return first.zone === second.zone && first.column === second.column && first.index === second.index && first.suit === second.suit;
+  return first.zone === second.zone && first.column === second.column && first.index === second.index && first.suit === second.suit && first.slot === second.slot;
 }
 
 function readBest(): BestStats | null {

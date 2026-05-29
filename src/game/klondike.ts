@@ -13,6 +13,7 @@ export type MovePointer = {
   zone: Exclude<Zone, "stock">;
   column?: number;
   suit?: Suit;
+  slot?: number;
   index?: number;
 };
 
@@ -21,6 +22,7 @@ export type BoardSnapshot = {
   stock: Card[];
   waste: Card[];
   foundations: Record<Suit, Card[]>;
+  foundationSlots: Array<Suit | null>;
   moves: number;
   status: GameStatus;
   startedAt: number;
@@ -70,11 +72,12 @@ export const starterGame = (): GameState => ({
   stock: [],
   waste: [],
   foundations: emptyFoundations(),
+  foundationSlots: emptyFoundationSlots(),
   moves: 0,
   status: "menu",
   startedAt: Date.now(),
   finishedAt: null,
-  message: "Classic Klondike: build foundations from Ace to King.",
+  message: "Classic Klondike: drop any Ace into any open foundation.",
   stockPassKey: "",
   stockPassMadeMove: false,
   history: [],
@@ -98,11 +101,12 @@ export const createGame = (): GameState => {
     stock: deck.map((card) => ({ ...card, faceUp: false })),
     waste: [],
     foundations: emptyFoundations(),
+    foundationSlots: emptyFoundationSlots(),
     moves: 0,
     status: "playing",
     startedAt: Date.now(),
     finishedAt: null,
-    message: "Move cards down in alternating colors. Build each suit from Ace to King.",
+    message: "Move cards down in alternating colors. Any open foundation accepts any Ace.",
     stockPassKey: "",
     stockPassMadeMove: false,
     history: [],
@@ -191,18 +195,22 @@ export const moveCards = (game: GameState, from: MovePointer, to: MovePointer): 
   }
 
   if (to.zone === "foundation") {
-    if (moving.length !== 1 || !to.suit || moving[0].suit !== to.suit || !canMoveToFoundation(game.foundations[to.suit], moving[0])) {
+    const target = resolveFoundationTarget(game, to, moving[0]);
+    if (moving.length !== 1 || !target || !canMoveToFoundation(game.foundations[target.suit], moving[0])) {
       return fail(game, "Foundations build by suit from Ace to King.");
     }
 
     const next = cloneSnapshot(snapshotOf(game));
     removeMovingCards(next, from);
-    next.foundations[to.suit].push({ ...moving[0], faceUp: true });
+    if (target.newSlot) {
+      next.foundationSlots[target.slot] = target.suit;
+    }
+    next.foundations[target.suit].push({ ...moving[0], faceUp: true });
     next.moves += 1;
     next.stockPassMadeMove = true;
     const flipped = revealSourceTop(next, from);
     refreshStatus(next);
-    next.message = next.status === "won" ? "Board cleared." : `${rankLabel(moving[0].rank)} to ${suitName[to.suit]}.`;
+    next.message = next.status === "won" ? "Board cleared." : `${rankLabel(moving[0].rank)} to ${suitName[target.suit]}.`;
     return {
       game: withHistory(next, game),
       sound: next.status === "won" ? "win" : flipped ? "flip" : "complete",
@@ -277,6 +285,7 @@ export const jokerMove = (game: GameState): ActionResult => {
       return fail(game, "Joker could not find a useful card.");
     }
 
+    ensureFoundationSlot(next, card.suit);
     next.foundations[card.suit].push({ ...card, faceUp: true });
     next.moves += 1;
     next.stockPassMadeMove = true;
@@ -479,6 +488,57 @@ function describeSource(pointer: MovePointer) {
   return "the selected pile";
 }
 
+function resolveFoundationTarget(
+  game: BoardSnapshot,
+  pointer: MovePointer,
+  card: Card,
+): { suit: Suit; slot: number; newSlot: boolean } | null {
+  if (pointer.zone !== "foundation") {
+    return null;
+  }
+
+  if (pointer.slot !== undefined) {
+    const slotSuit = game.foundationSlots[pointer.slot];
+    if (slotSuit) {
+      return slotSuit === card.suit ? { suit: slotSuit, slot: pointer.slot, newSlot: false } : null;
+    }
+
+    if (card.rank !== 1 || game.foundations[card.suit].length || game.foundationSlots.includes(card.suit)) {
+      return null;
+    }
+
+    return { suit: card.suit, slot: pointer.slot, newSlot: true };
+  }
+
+  const suit = pointer.suit ?? card.suit;
+  if (suit !== card.suit) {
+    return null;
+  }
+
+  const existingSlot = game.foundationSlots.findIndex((slotSuit) => slotSuit === suit);
+  if (existingSlot !== -1) {
+    return { suit, slot: existingSlot, newSlot: false };
+  }
+
+  const openSlot = game.foundationSlots.findIndex((slotSuit) => slotSuit === null);
+  if (openSlot !== -1 && card.rank === 1 && !game.foundations[suit].length) {
+    return { suit, slot: openSlot, newSlot: true };
+  }
+
+  return null;
+}
+
+function ensureFoundationSlot(game: BoardSnapshot, suit: Suit) {
+  if (game.foundationSlots.includes(suit)) {
+    return;
+  }
+
+  const openSlot = game.foundationSlots.findIndex((slotSuit) => slotSuit === null);
+  if (openSlot !== -1) {
+    game.foundationSlots[openSlot] = suit;
+  }
+}
+
 function canMoveToFoundation(foundation: Card[], card: Card) {
   const top = foundation[foundation.length - 1];
   if (!top) {
@@ -501,8 +561,9 @@ function readMovingCards(game: BoardSnapshot, pointer: MovePointer): Card[] {
     return card ? [card] : [];
   }
 
-  if (pointer.zone === "foundation" && pointer.suit) {
-    const card = game.foundations[pointer.suit][game.foundations[pointer.suit].length - 1];
+  if (pointer.zone === "foundation") {
+    const suit = pointer.suit ?? (pointer.slot !== undefined ? game.foundationSlots[pointer.slot] : null);
+    const card = suit ? game.foundations[suit][game.foundations[suit].length - 1] : null;
     return card ? [card] : [];
   }
 
@@ -517,8 +578,11 @@ function readMovingCards(game: BoardSnapshot, pointer: MovePointer): Card[] {
 function removeMovingCards(game: BoardSnapshot, pointer: MovePointer) {
   if (pointer.zone === "waste") {
     game.waste.pop();
-  } else if (pointer.zone === "foundation" && pointer.suit) {
-    game.foundations[pointer.suit].pop();
+  } else if (pointer.zone === "foundation") {
+    const suit = pointer.suit ?? (pointer.slot !== undefined ? game.foundationSlots[pointer.slot] : null);
+    if (suit) {
+      game.foundations[suit].pop();
+    }
   } else if (pointer.zone === "tableau" && pointer.column !== undefined && pointer.index !== undefined) {
     game.tableau[pointer.column] = game.tableau[pointer.column].slice(0, pointer.index);
   }
@@ -581,8 +645,9 @@ function stockCycleKey(game: BoardSnapshot) {
     .map((column) => column.map((card) => `${card.id}:${card.faceUp ? "1" : "0"}`).join(","))
     .join("|");
   const foundationKey = suits.map((suit) => game.foundations[suit].map((card) => card.id).join(",")).join("|");
+  const foundationSlotKey = game.foundationSlots.map((suit) => suit ?? "open").join(",");
   const stockKey = game.stock.map((card) => card.id).join(",");
-  return `${tableauKey}#${foundationKey}#${stockKey}`;
+  return `${tableauKey}#${foundationKey}#${foundationSlotKey}#${stockKey}`;
 }
 
 function findNextFoundationCandidate(game: BoardSnapshot): { card: Card; source: MovePointer } | null {
@@ -669,6 +734,10 @@ function emptyFoundations(): Record<Suit, Card[]> {
   };
 }
 
+function emptyFoundationSlots(): Array<Suit | null> {
+  return [null, null, null, null];
+}
+
 function createDeck() {
   const cards: Card[] = [];
   suits.forEach((suit) => {
@@ -694,6 +763,7 @@ function snapshotOf(game: GameState): BoardSnapshot {
     stock: game.stock,
     waste: game.waste,
     foundations: game.foundations,
+    foundationSlots: game.foundationSlots,
     moves: game.moves,
     status: game.status,
     startedAt: game.startedAt,
@@ -710,6 +780,7 @@ function cloneSnapshot(snapshot: BoardSnapshot): BoardSnapshot {
     tableau: snapshot.tableau.map((column) => column.map((card) => ({ ...card }))),
     stock: snapshot.stock.map((card) => ({ ...card })),
     waste: snapshot.waste.map((card) => ({ ...card })),
+    foundationSlots: [...snapshot.foundationSlots],
     foundations: {
       spades: snapshot.foundations.spades.map((card) => ({ ...card })),
       hearts: snapshot.foundations.hearts.map((card) => ({ ...card })),
